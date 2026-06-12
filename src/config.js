@@ -1,0 +1,65 @@
+'use strict';
+
+/**
+ * Agent configuration.
+ * systemd injects /etc/itupulse/agent.env via EnvironmentFile, so everything
+ * arrives as process.env. Falls back to reading the file directly when run
+ * manually (e.g. registration test during install).
+ */
+const fs = require('fs');
+
+const ENV_FILE = process.env.ITUPULSE_ENV_FILE || '/etc/itupulse/agent.env';
+
+function loadEnvFile() {
+  try {
+    const content = fs.readFileSync(ENV_FILE, 'utf8');
+    for (const line of content.split('\n')) {
+      const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
+      if (m && process.env[m[1]] === undefined) {
+        process.env[m[1]] = m[2].replace(/^["']|["']$/g, '');
+      }
+    }
+  } catch {
+    /* env file optional when vars come from systemd */
+  }
+}
+
+loadEnvFile();
+
+function required(name) {
+  const v = process.env[name];
+  if (!v) {
+    process.stderr.write(`FATAL: missing required config ${name} (set in ${ENV_FILE})\n`);
+    process.exit(1);
+  }
+  return v;
+}
+
+const config = {
+  apiUrl: required('ITUPULSE_API_URL').replace(/\/+$/, ''),
+  installKey: process.env.ITUPULSE_INSTALL_KEY || '',
+  serverName: process.env.ITUPULSE_SERVER_NAME || '',
+  environment: process.env.ITUPULSE_ENVIRONMENT || 'production',
+  nginxAccessLog: process.env.ITUPULSE_NGINX_ACCESS_LOG || '/var/log/nginx/access.log',
+
+  metricIntervalMs: Number(process.env.ITUPULSE_METRIC_INTERVAL_MS) || 5000,
+  logBatchSize: Math.min(Number(process.env.ITUPULSE_LOG_BATCH_SIZE) || 100, 500),
+
+  // Background mode: relaxed intervals. Realtime mode (viewer watching): fast.
+  backgroundMetricIntervalMs: Number(process.env.ITUPULSE_METRIC_INTERVAL_MS) || 5000,
+  realtimeMetricIntervalMs: 2000,
+  heartbeatIntervalMs: 30000,
+  logFlushIntervalMs: 10000,
+  realtimeLogFlushIntervalMs: 2000,
+
+  stateDir: process.env.ITUPULSE_STATE_DIR || '/var/lib/itupulse-agent',
+  agentVersion: '1.0.0'
+};
+
+// Security: refuse plain HTTP outside explicit dev override (spec: HTTPS only).
+if (!config.apiUrl.startsWith('https://') && process.env.ITUPULSE_ALLOW_INSECURE !== 'true') {
+  process.stderr.write('FATAL: ITUPULSE_API_URL must use https:// (set ITUPULSE_ALLOW_INSECURE=true only for local testing)\n');
+  process.exit(1);
+}
+
+module.exports = config;

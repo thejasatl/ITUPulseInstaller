@@ -1,0 +1,16 @@
+{
+  "name": "itupulse-agent",
+  "version": "1.0.0",
+  "description": "ITUPulse monitoring agent — reads NGINX access logs and system metrics, ships them to the ITUPulse backend. Zero runtime dependencies.",
+  "main": "src/agent.js",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "start": "node src/agent.js"
+  },
+  "dependencies": {},
+  "license": "UNLICENSED",
+  "private": true
+}

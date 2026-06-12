@@ -1,0 +1,37 @@
+[Unit]
+Description=ITUPulse Monitoring Agent
+Documentation=https://github.com/YOUR_ORG/itupulse-agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=itupulse
+Group=itupulse
+WorkingDirectory=/opt/itupulse-agent
+EnvironmentFile=/etc/itupulse/agent.env
+ExecStart=/usr/bin/env node /opt/itupulse-agent/src/agent.js
+Restart=always
+RestartSec=5
+
+# ---- Hardening (spec section 15) ----
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+ReadWritePaths=/var/lib/itupulse-agent /var/log/itupulse-agent
+ReadOnlyPaths=/var/log/nginx
+
+# Resource limits — the agent must never starve the host
+MemoryMax=200M
+CPUQuota=20%
+
+[Install]
+WantedBy=multi-user.target
