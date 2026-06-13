@@ -1,6 +1,6 @@
 [Unit]
 Description=ITUPulse Monitoring Agent
-Documentation=https://github.com/YOUR_ORG/itupulse-agent
+Documentation=https://github.com/thejasatl/ITUPulseInstaller
 After=network-online.target
 Wants=network-online.target
 

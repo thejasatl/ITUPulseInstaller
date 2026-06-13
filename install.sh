@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # ITUPulse Agent installer
-#   curl -fsSL https://raw.githubusercontent.com/YOUR_ORG/itupulse-agent/main/install.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/thejasatl/ITUPulseInstaller/main/install.sh | sudo ITUPULSE_INSTALL_KEY=<key> bash
 #
 # Responsibilities (spec section 16): OS check, root check, Node.js check,
 # itupulse user, directories, agent download, install key prompt, NGINX log
@@ -9,7 +9,7 @@
 #
 set -euo pipefail
 
-REPO_RAW="${ITUPULSE_REPO_RAW:-https://raw.githubusercontent.com/YOUR_ORG/itupulse-agent/main}"
+REPO_RAW="${ITUPULSE_REPO_RAW:-https://raw.githubusercontent.com/thejasatl/ITUPulseInstaller/main}"
 APP_DIR=/opt/itupulse-agent
 ETC_DIR=/etc/itupulse
 STATE_DIR=/var/lib/itupulse-agent
