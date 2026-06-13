@@ -69,7 +69,7 @@ chmod -R 750 "$APP_DIR"
 
 # ---- 6. Gather configuration ----
 if [ -t 0 ]; then
-  read -rp "ITUPulse API URL [https://api.itupulse.com]: " API_URL
+  read -rp "ITUPulse API URL [https://itupulseagentapi.indotruck-utama.co.id]: " API_URL
   read -rp "Install key (from dashboard): " INSTALL_KEY
   read -rp "Server name [$(hostname)]: " SERVER_NAME
   read -rp "Environment [production]: " ENVIRONMENT
@@ -80,7 +80,7 @@ else
   SERVER_NAME="${ITUPULSE_SERVER_NAME:-}"
   ENVIRONMENT="${ITUPULSE_ENVIRONMENT:-}"
 fi
-API_URL="${API_URL:-https://api.itupulse.com}"
+API_URL="${API_URL:-https://itupulseagentapi.indotruck-utama.co.id}"
 SERVER_NAME="${SERVER_NAME:-$(hostname)}"
 ENVIRONMENT="${ENVIRONMENT:-production}"
 [ -n "$INSTALL_KEY" ] || fail "install key is required (set ITUPULSE_INSTALL_KEY when piping)"

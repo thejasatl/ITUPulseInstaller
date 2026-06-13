@@ -3,3 +3,6 @@ node_modules/
 credentials.json
 agent.env
 .DS_Store
+
+# secrets / local state (never commit)
+*.local
