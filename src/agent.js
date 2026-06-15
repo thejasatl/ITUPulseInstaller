@@ -32,6 +32,7 @@ let stopping = false;
 // ---------- senders ----------
 
 async function sendLogs() {
+  if (!realtimeMode) return; // logs only flow to the DB while a viewer is watching
   // Drain buffered backlog first, then in-memory batch.
   try {
     const backlog = buffer.drain('logs', config.logBatchSize);
@@ -175,8 +176,12 @@ async function main() {
   }
 
   logReader = new NginxLogReader((entries) => {
+    // Only stream logs to the backend while a dashboard viewer is watching this
+    // server (realtime mode). In background we discard them — no DB spam. The
+    // reader keeps advancing the file offset, so when a viewer connects we stream
+    // from "now", not the whole backlog. Raw history lives in the access.log file.
+    if (!realtimeMode) return;
     pendingLogs.push(...entries);
-    // Memory guard: cap in-memory queue; spill to disk buffer.
     if (pendingLogs.length > config.logBatchSize * 5) {
       buffer.push('logs', pendingLogs.splice(0, pendingLogs.length - config.logBatchSize));
     }

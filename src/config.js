@@ -55,11 +55,12 @@ const config = {
   // preferred name; ITUPULSE_NGINX_ACCESS_LOG kept for backward compatibility.
   nginxAccessLog: process.env.ITUPULSE_ACCESS_LOG || process.env.ITUPULSE_NGINX_ACCESS_LOG || '/var/log/nginx/access.log',
 
-  metricIntervalMs: Number(process.env.ITUPULSE_METRIC_INTERVAL_MS) || 15000,
+  metricIntervalMs: Number(process.env.ITUPULSE_METRIC_INTERVAL_MS) || 3600000,
   logBatchSize: Math.min(Number(process.env.ITUPULSE_LOG_BATCH_SIZE) || 100, 500),
 
   // Background mode: relaxed intervals. Realtime mode (viewer watching): fast.
-  backgroundMetricIntervalMs: Number(process.env.ITUPULSE_METRIC_INTERVAL_MS) || 15000,
+  backgroundMetricIntervalMs: Number(process.env.ITUPULSE_METRIC_INTERVAL_MS) || 3600000, // 1h when idle
+  // realtime (a viewer is watching) stays fast:
   realtimeMetricIntervalMs: 2000,
   heartbeatIntervalMs: 30000,
   logFlushIntervalMs: 10000,
