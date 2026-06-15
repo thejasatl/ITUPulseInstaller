@@ -210,7 +210,7 @@ class NginxLogReader {
     for (const file of this.discover()) {
       try {
         const st = fs.statSync(file);
-        const readBytes = Math.min(st.size, 256 * 1024);
+        const readBytes = Math.min(st.size, 4 * 1024 * 1024); // up to ~4MB so deep history (1000s of lines) is reachable
         if (readBytes <= 0) continue;
         const start = st.size - readBytes;
         const fd = await fs.promises.open(file, 'r');

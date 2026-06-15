@@ -66,7 +66,7 @@ async function sendLogs() {
 // Independent of realtime mode — this is an explicit request, not background.
 async function sendTailFromFile(lines) {
   if (!logReader) return;
-  const n = Math.min(Math.max(Number(lines) || 50, 1), 500);
+  const n = Math.min(Math.max(Number(lines) || 100, 1), 5000);
   let entries = [];
   try {
     entries = await logReader.backfill(n);
@@ -91,7 +91,7 @@ async function sendTailFromFile(lines) {
   logger.info('shipped access.log tail from file', { requested: n, sent: entries.length });
 }
 
-async function sendMetrics(forceLive = false) {
+async function sendMetrics(live = false) {
   let snapshot;
   try {
     snapshot = await metricsCollector.collect();
@@ -99,8 +99,9 @@ async function sendMetrics(forceLive = false) {
     logger.error('metrics collection failed', { err: err.message });
     return;
   }
-  // Live (1-min while watched, or on-demand) -> short-TTL store; hourly -> long-TTL.
-  snapshot.live = forceLive || realtimeMode;
+  // `live` is explicit: true -> 1-min live sample (2-min retention in the DB),
+  // false -> hourly background sample (7-day retention). Single `metrics` store.
+  snapshot.live = live;
 
   // Flush one buffered metric first if present
   try {
@@ -171,19 +172,26 @@ function clearTimers() {
 
 function schedule() {
   clearTimers();
-  const metricMs = realtimeMode ? config.realtimeMetricIntervalMs : config.backgroundMetricIntervalMs;
   const flushMs = realtimeMode ? config.realtimeLogFlushIntervalMs : config.logFlushIntervalMs;
 
-  timers.push(setInterval(() => sendMetrics().catch(() => {}), metricMs));
+  // Background metric ALWAYS: one hourly sample regardless of whether anyone is
+  // watching (live=false -> kept 7 days). This is the "whatever happens, send
+  // every hour" guarantee — it no longer stops when the socket is active.
+  timers.push(setInterval(() => sendMetrics(false).catch(() => {}), config.backgroundMetricIntervalMs));
+
+  // Live metric ONLY while a dashboard viewer is watching this server:
+  // a 1-minute sample (live=true -> auto-deleted after 2 minutes).
+  if (realtimeMode) {
+    timers.push(setInterval(() => sendMetrics(true).catch(() => {}), config.realtimeMetricIntervalMs));
+  }
+
   timers.push(setInterval(() => sendLogs().catch(() => {}), flushMs));
   timers.push(setInterval(() => sendHeartbeat().catch(() => {}), config.heartbeatIntervalMs));
 
-  // Send ONE sample right away so the dashboard always has fresh CPU/RAM/disk
-  // data immediately after a (re)start or a mode switch. Without this, the first
-  // background metric wouldn't arrive for a full hour (idle interval) and the
-  // `metrics` collection would sit empty until then. Routing still respects
-  // realtimeMode: a live sample -> MetricLive (2-min TTL), background -> Metric (7-day).
-  sendMetrics().catch(() => {});
+  // Send samples immediately so the dashboard has fresh data right after a
+  // (re)start or a mode switch (otherwise the first hourly sample is an hour away).
+  sendMetrics(false).catch(() => {});               // background snapshot now
+  if (realtimeMode) sendMetrics(true).catch(() => {}); // live snapshot now (if watched)
 }
 
 // ---------- lifecycle ----------
