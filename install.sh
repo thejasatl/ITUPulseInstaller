@@ -95,6 +95,7 @@ say "downloading agent…"
 for f in "${AGENT_FILES[@]}"; do
   gh_fetch "$f" "$APP_DIR/$f" || fail "download failed: $f (private repo? set ITUPULSE_GH_TOKEN)"
 done
+gh_fetch "uninstall.sh" "$APP_DIR/uninstall.sh" || say "WARNING: could not fetch uninstall.sh (you can remove manually later)"
 echo "1.0.0" > "$APP_DIR/VERSION"
 chown -R root:itupulse "$APP_DIR"
 chmod -R 750 "$APP_DIR"
@@ -160,4 +161,4 @@ say ""
 say "ITUPulse Agent installed and running."
 say "  status : sudo systemctl status itupulse-agent"
 say "  logs   : journalctl -u itupulse-agent -f"
-say "  remove : sudo bash uninstall.sh"
+say "  remove : sudo bash /opt/itupulse-agent/uninstall.sh"
