@@ -123,7 +123,7 @@ ENVIRONMENT="${ENVIRONMENT:-production}"
 
 # Access log to tail: NGINX's, OR an app's own request log (JSON lines auto-detected).
 ACCESS_LOG="${ACCESS_LOG:-/var/log/nginx/access.log}"
-[ -f "$ACCESS_LOG" ] || say "WARNING: $ACCESS_LOG not found yet — agent will poll until it appears (set ITUPULSE_ACCESS_LOG to your app log)"
+[ -e "$ACCESS_LOG" ] || say "WARNING: $ACCESS_LOG not found yet — agent will poll until it appears (set ITUPULSE_ACCESS_LOG to your app log)"
 
 # ---- 7. Write env file (restricted permissions per spec) ----
 cat > "$ETC_DIR/agent.env" <<ENVEOF
@@ -160,6 +160,24 @@ if sudo -u itupulse ITUPULSE_ENV_FILE="$ETC_DIR/agent.env" node -e "
 else
   fail "registration failed — check install key, API URL, and network. Nothing was started."
 fi
+
+# ---- Grant the agent read access to the log path (handles logs under /home) ----
+# Add itupulse to the log's owning group so it can read group-readable logs, and
+# allow read-only /home in the sandbox — no manual commands, no world-exposure.
+if [ -e "$ACCESS_LOG" ]; then
+  LOG_GROUP="$(stat -c '%G' "$ACCESS_LOG" 2>/dev/null || true)"
+  if [ -n "$LOG_GROUP" ] && [ "$LOG_GROUP" != "itupulse" ] && [ "$LOG_GROUP" != "UNKNOWN" ]; then
+    usermod -aG "$LOG_GROUP" itupulse 2>/dev/null && say "added 'itupulse' to group '$LOG_GROUP' so it can read $ACCESS_LOG" || true
+  fi
+fi
+case "$ACCESS_LOG" in
+  /home/*|/root/*)
+    mkdir -p /etc/systemd/system/itupulse-agent.service.d
+    printf '[Service]\nProtectHome=read-only\n' > /etc/systemd/system/itupulse-agent.service.d/loghome.conf
+    say "log path is under a home dir — set ProtectHome=read-only for the agent"
+    ;;
+esac
+systemctl daemon-reload
 
 # ---- 10. Enable + start ----
 systemctl enable itupulse-agent >/dev/null
