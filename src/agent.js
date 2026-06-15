@@ -74,6 +74,20 @@ async function sendTailFromFile(lines) {
     logger.warn('access.log tail read failed', { err: err.message });
     return;
   }
+  // Always report the access.log health so the dashboard can explain results
+  // (path found? readable? how many lines?) instead of spinning forever.
+  try {
+    const diag = logReader.diagnostics();
+    await post('/api/v1/agent/log-status', {
+      accessLog: diag.target,
+      mode: diag.mode,
+      targetExists: diag.targetExists,
+      files: diag.files,
+      returned: entries.length
+    });
+  } catch (err) {
+    if (isAuthFailure(err)) return handleRevoked();
+  }
   if (!entries.length) {
     logger.info('access.log tail requested but file had no readable lines', { requested: n });
     return;

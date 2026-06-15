@@ -63,6 +63,29 @@ class NginxLogReader {
     }
   }
 
+  /**
+   * Live health of the configured access log so the dashboard can explain an
+   * empty result instead of spinning: does the path exist, is it readable,
+   * which files were found, and how big are they.
+   */
+  diagnostics() {
+    let mode = 'pending';
+    let targetExists = true;
+    try {
+      mode = fs.statSync(this.target).isDirectory() ? 'directory' : 'file';
+    } catch {
+      targetExists = false;
+    }
+    const files = [];
+    for (const f of this.discover()) {
+      const info = { path: f, exists: false, readable: false, size: 0 };
+      try { const st = fs.statSync(f); info.exists = true; info.size = st.size; } catch { /* gone */ }
+      try { fs.accessSync(f, fs.constants.R_OK); info.readable = true; } catch { /* no perm */ }
+      files.push(info);
+    }
+    return { target: this.target, mode, targetExists, files };
+  }
+
   discover() {
     let st;
     try {
