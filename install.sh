@@ -97,7 +97,7 @@ for f in "${AGENT_FILES[@]}"; do
 done
 gh_fetch "uninstall.sh" "$APP_DIR/uninstall.sh" || say "WARNING: could not fetch uninstall.sh (you can remove manually later)"
 gh_fetch "update.sh" "$APP_DIR/update.sh" || say "WARNING: could not fetch update.sh"
-echo "1.0.0" > "$APP_DIR/VERSION"
+node -e "try{process.stdout.write(String(require('$APP_DIR/package.json').version||'1.0.1'))}catch(e){process.stdout.write('1.0.1')}" > "$APP_DIR/VERSION" 2>/dev/null || echo "1.0.1" > "$APP_DIR/VERSION"
 chown -R root:itupulse "$APP_DIR"
 chmod -R 750 "$APP_DIR"
 

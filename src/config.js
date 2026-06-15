@@ -7,6 +7,8 @@
  * manually (e.g. registration test during install).
  */
 const fs = require('fs');
+let pkgVersion = '1.0.1';
+try { pkgVersion = require('../package.json').version || pkgVersion; } catch { /* keep default */ }
 
 const ENV_FILE = process.env.ITUPULSE_ENV_FILE || '/etc/itupulse/agent.env';
 
@@ -67,7 +69,7 @@ const config = {
   realtimeLogFlushIntervalMs: 2000,
 
   stateDir: process.env.ITUPULSE_STATE_DIR || '/var/lib/itupulse-agent',
-  agentVersion: '1.0.0'
+  agentVersion: pkgVersion
 };
 
 // Security: refuse plain HTTP outside explicit dev override (spec: HTTPS only).

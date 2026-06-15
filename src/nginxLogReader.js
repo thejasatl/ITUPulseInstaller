@@ -191,6 +191,41 @@ class NginxLogReader {
     }
     if (touched) this.saveState();
   }
+
+  /**
+   * Read the most recent lines from the watched file(s) WITHOUT touching the
+   * tail offset. Used to backfill recent history into the dashboard when a
+   * viewer opens the server (so "History" reflects the real access.log without
+   * storing anything in the background).
+   */
+  async backfill(maxLines = 200) {
+    const out = [];
+    for (const file of this.discover()) {
+      try {
+        const st = fs.statSync(file);
+        const readBytes = Math.min(st.size, 256 * 1024);
+        if (readBytes <= 0) continue;
+        const start = st.size - readBytes;
+        const fd = await fs.promises.open(file, 'r');
+        try {
+          const buf = Buffer.alloc(readBytes);
+          await fd.read(buf, 0, readBytes, start);
+          const lines = buf.toString('utf8').split('\n');
+          if (start > 0) lines.shift();
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            const e = parseLine(line);
+            if (e) out.push(e);
+          }
+        } finally {
+          await fd.close();
+        }
+      } catch {
+        /* skip unreadable file */
+      }
+    }
+    return out.slice(-maxLines);
+  }
 }
 
 module.exports = NginxLogReader;

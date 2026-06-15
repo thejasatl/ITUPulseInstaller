@@ -98,6 +98,13 @@ async function sendHeartbeat() {
       realtimeMode = wantRealtime;
       logger.info(`switching to ${realtimeMode ? 'REALTIME' : 'background'} mode`);
       schedule(); // re-arm timers with new intervals
+      // When a viewer opens this server, backfill recent history from the file
+      // so the dashboard's History/stream shows it — without background storage.
+      if (realtimeMode && logReader) {
+        logReader.backfill(200)
+          .then((entries) => { if (entries.length) { pendingLogs.push(...entries); return sendLogs(); } })
+          .catch(() => {});
+      }
     }
   } catch (err) {
     if (isAuthFailure(err)) return handleRevoked();
