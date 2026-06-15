@@ -7,7 +7,7 @@
  * manually (e.g. registration test during install).
  */
 const fs = require('fs');
-let pkgVersion = '1.0.1';
+let pkgVersion = '1.0.2';
 try { pkgVersion = require('../package.json').version || pkgVersion; } catch { /* keep default */ }
 
 const ENV_FILE = process.env.ITUPULSE_ENV_FILE || '/etc/itupulse/agent.env';
@@ -61,9 +61,12 @@ const config = {
   logBatchSize: Math.min(Number(process.env.ITUPULSE_LOG_BATCH_SIZE) || 100, 500),
 
   // Background mode: relaxed intervals. Realtime mode (viewer watching): fast.
-  backgroundMetricIntervalMs: Number(process.env.ITUPULSE_METRIC_INTERVAL_MS) || 3600000, // 1h when idle
+  // 1h when idle. Deliberately ignores the legacy ITUPULSE_METRIC_INTERVAL_MS
+  // (old installs set it to 5-15s) and clamps to a 1-min floor so a stale
+  // agent.env can never spam the database.
+  backgroundMetricIntervalMs: Math.max(60000, Number(process.env.ITUPULSE_BACKGROUND_METRIC_MS) || 3600000),
   // realtime (a viewer is watching) stays fast:
-  realtimeMetricIntervalMs: 2000,
+  realtimeMetricIntervalMs: Math.max(15000, Number(process.env.ITUPULSE_REALTIME_METRIC_MS) || 60000), // 1 min while watched (floor 15s)
   heartbeatIntervalMs: 30000,
   logFlushIntervalMs: 10000,
   realtimeLogFlushIntervalMs: 2000,

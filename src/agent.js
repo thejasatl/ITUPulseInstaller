@@ -61,7 +61,7 @@ async function sendLogs() {
   }
 }
 
-async function sendMetrics() {
+async function sendMetrics(forceLive = false) {
   let snapshot;
   try {
     snapshot = await metricsCollector.collect();
@@ -69,6 +69,8 @@ async function sendMetrics() {
     logger.error('metrics collection failed', { err: err.message });
     return;
   }
+  // Live (1-min while watched, or on-demand) -> short-TTL store; hourly -> long-TTL.
+  snapshot.live = forceLive || realtimeMode;
 
   // Flush one buffered metric first if present
   try {
@@ -93,6 +95,9 @@ async function sendHeartbeat() {
       agentUptimeSec: Math.round(process.uptime()),
       bufferSize: buffer.size()
     });
+    if (resp.data && resp.data.sampleNow) {
+      sendMetrics(true).catch(() => {}); // on-demand sample requested from the dashboard
+    }
     const wantRealtime = Boolean(resp.data && resp.data.streamingRequested);
     if (wantRealtime !== realtimeMode) {
       realtimeMode = wantRealtime;
