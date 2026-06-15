@@ -135,13 +135,22 @@ function schedule() {
 
 // ---------- lifecycle ----------
 
-function shutdown(code = 0) {
+async function shutdown(code = 0) {
   if (stopping) return;
   stopping = true;
   logger.info('shutting down');
   clearTimers();
   if (logReader) logReader.stop();
   if (pendingLogs.length) buffer.push('logs', pendingLogs); // persist unsent
+  // Best-effort: tell the backend we're going offline so the dashboard updates
+  // immediately instead of waiting for the heartbeat timeout. Ignore failures.
+  try {
+    if (credentials.get()) {
+      await post('/api/v1/agent/shutdown', { reason: 'service stop' }, { timeoutMs: 4000 });
+    }
+  } catch {
+    /* offline detector will catch it anyway */
+  }
   process.exit(code);
 }
 

@@ -50,7 +50,10 @@ const config = {
   installKey: process.env.ITUPULSE_INSTALL_KEY || '',
   serverName: process.env.ITUPULSE_SERVER_NAME || '',
   environment: process.env.ITUPULSE_ENVIRONMENT || 'production',
-  nginxAccessLog: process.env.ITUPULSE_NGINX_ACCESS_LOG || '/var/log/nginx/access.log',
+  // Path to the request log to tail. Either NGINX's access.log OR an app's own
+  // request-log file (JSON-lines auto-detected). ITUPULSE_ACCESS_LOG is the
+  // preferred name; ITUPULSE_NGINX_ACCESS_LOG kept for backward compatibility.
+  nginxAccessLog: process.env.ITUPULSE_ACCESS_LOG || process.env.ITUPULSE_NGINX_ACCESS_LOG || '/var/log/nginx/access.log',
 
   metricIntervalMs: Number(process.env.ITUPULSE_METRIC_INTERVAL_MS) || 5000,
   logBatchSize: Math.min(Number(process.env.ITUPULSE_LOG_BATCH_SIZE) || 100, 500),

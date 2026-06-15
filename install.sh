@@ -106,21 +106,23 @@ if [ -t 0 ]; then
   read -rp "Install key (from dashboard): " INSTALL_KEY
   read -rp "Server name [$(hostname)]: " SERVER_NAME
   read -rp "Environment [production]: " ENVIRONMENT
+  read -rp "Access log to monitor [/var/log/nginx/access.log]: " ACCESS_LOG
 else
   # piped install (curl | bash): values must come from environment
   API_URL="${ITUPULSE_API_URL:-}"
   INSTALL_KEY="${ITUPULSE_INSTALL_KEY:-}"
   SERVER_NAME="${ITUPULSE_SERVER_NAME:-}"
   ENVIRONMENT="${ITUPULSE_ENVIRONMENT:-}"
+  ACCESS_LOG="${ITUPULSE_ACCESS_LOG:-}"
 fi
 API_URL="${API_URL:-https://itupulseagentapi.indotruck-utama.co.id:4000}"
 SERVER_NAME="${SERVER_NAME:-$(hostname)}"
 ENVIRONMENT="${ENVIRONMENT:-production}"
 [ -n "$INSTALL_KEY" ] || fail "install key is required (set ITUPULSE_INSTALL_KEY when piping)"
 
-# Auto-detect NGINX access log
-NGINX_LOG="/var/log/nginx/access.log"
-[ -f "$NGINX_LOG" ] || say "WARNING: $NGINX_LOG not found — agent will poll until it appears"
+# Access log to tail: NGINX's, OR an app's own request log (JSON lines auto-detected).
+ACCESS_LOG="${ACCESS_LOG:-/var/log/nginx/access.log}"
+[ -f "$ACCESS_LOG" ] || say "WARNING: $ACCESS_LOG not found yet — agent will poll until it appears (set ITUPULSE_ACCESS_LOG to your app log)"
 
 # ---- 7. Write env file (restricted permissions per spec) ----
 cat > "$ETC_DIR/agent.env" <<ENVEOF
@@ -128,7 +130,7 @@ ITUPULSE_API_URL=$API_URL
 ITUPULSE_INSTALL_KEY=$INSTALL_KEY
 ITUPULSE_SERVER_NAME=$SERVER_NAME
 ITUPULSE_ENVIRONMENT=$ENVIRONMENT
-ITUPULSE_NGINX_ACCESS_LOG=$NGINX_LOG
+ITUPULSE_ACCESS_LOG=$ACCESS_LOG
 ITUPULSE_METRIC_INTERVAL_MS=5000
 ITUPULSE_LOG_BATCH_SIZE=100
 ITUPULSE_STATE_DIR=$STATE_DIR

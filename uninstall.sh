@@ -3,6 +3,14 @@
 set -euo pipefail
 [ "$(id -u)" -eq 0 ] || { echo "run as root"; exit 1; }
 
+# --- tell the backend we're going offline (BEFORE deleting creds) ---
+# Signed request with the agent's own credentials so the dashboard flips the
+# server to offline + raises an "agent uninstalled" alert immediately, instead
+# of waiting for the heartbeat timeout. Best-effort; ignore any failure.
+if [ -f /opt/itupulse-agent/src/transportHttp.js ] && [ -f /etc/itupulse/agent.env ]; then
+  sudo -u itupulse ITUPULSE_ENV_FILE=/etc/itupulse/agent.env node -e 'require("/opt/itupulse-agent/src/transportHttp").post("/api/v1/agent/shutdown",{reason:"uninstall"},{timeoutMs:4000}).then(function(){process.exit(0)}).catch(function(){process.exit(0)})' 2>/dev/null || true
+fi
+
 # --- systemd install ---
 systemctl stop itupulse-agent 2>/dev/null || true
 systemctl disable itupulse-agent 2>/dev/null || true
@@ -21,4 +29,5 @@ rm -rf /var/lib/itupulse-agent
 rm -rf /var/log/itupulse-agent
 userdel itupulse 2>/dev/null || true
 
-echo "[itupulse] agent removed. Revoke the server in the dashboard to kill its credentials backend-side."
+echo "[itupulse] agent removed. The dashboard will show this server OFFLINE with an 'agent uninstalled' alert."
+echo "[itupulse] To fully remove it, delete the server in the dashboard (Servers -> Delete)."
