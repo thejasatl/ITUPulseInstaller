@@ -3,6 +3,8 @@
 /**
  * System metrics from /proc and Node os module. Read-only, Linux-only.
  * CPU% and network rates are computed as deltas between samples.
+ * RAM and disk report BOTH a percentage and absolute totals/used so the
+ * dashboard shows real GB instead of approximations.
  */
 const fs = require('fs');
 const os = require('os');
@@ -43,35 +45,61 @@ function cpuPercent() {
   }
 }
 
-function ramPercent() {
+/** RAM: percent + absolute totals (MB) from /proc/meminfo (values are in kB). */
+function ramStats() {
   try {
     const mem = readProc('/proc/meminfo');
     const get = (k) => Number((mem.match(new RegExp(`^${k}:\\s+(\\d+)`, 'm')) || [])[1] || 0);
-    const total = get('MemTotal');
-    const available = get('MemAvailable');
-    if (!total) return 0;
-    return Math.min(100, Math.max(0, ((total - available) / total) * 100));
+    const totalKb = get('MemTotal');
+    const availKb = get('MemAvailable');
+    if (!totalKb) return { percent: 0, totalMb: 0, usedMb: 0 };
+    const usedKb = Math.max(0, totalKb - availKb);
+    return {
+      percent: Math.min(100, Math.max(0, (usedKb / totalKb) * 100)),
+      totalMb: Math.round(totalKb / 1024),
+      usedMb: Math.round(usedKb / 1024)
+    };
   } catch {
-    return 0;
+    return { percent: 0, totalMb: 0, usedMb: 0 };
   }
 }
 
-/** Disk usage of the root filesystem via statfs (Node >= 18.15) or df fallback. */
-function diskPercent() {
+/** Disk usage of the root filesystem: percent + absolute totals (GB). */
+function diskStats() {
   return new Promise((resolve) => {
+    const fromStatfs = (s) => {
+      // Use bsize for byte sizing; "usable" excludes root-reserved blocks (matches df).
+      const bs = s.bsize || 4096;
+      const totalBytes = s.blocks * bs;
+      const freeBytes = s.bavail * bs;
+      const usedBytes = Math.max(0, (s.blocks - s.bfree) * bs);
+      const usable = usedBytes + freeBytes;
+      const GB = 1024 * 1024 * 1024;
+      resolve({
+        percent: usable ? Math.min(100, (usedBytes / usable) * 100) : 0,
+        totalGb: +(usable / GB).toFixed(1),
+        usedGb: +(usedBytes / GB).toFixed(1)
+      });
+    };
     if (typeof fs.statfs === 'function') {
       fs.statfs('/', (err, s) => {
-        if (err || !s.blocks) return resolve(0);
-        const used = s.blocks - s.bfree;
-        const usable = used + s.bavail;
-        resolve(usable ? Math.min(100, (used / usable) * 100) : 0);
+        if (err || !s.blocks) return resolve({ percent: 0, totalGb: 0, usedGb: 0 });
+        fromStatfs(s);
       });
     } else {
+      // df -k fallback (kB). Columns: Filesystem 1K-blocks Used Available Use% Mounted
       execFile('df', ['-k', '/'], { timeout: 5000 }, (err, stdout) => {
-        if (err) return resolve(0);
+        if (err) return resolve({ percent: 0, totalGb: 0, usedGb: 0 });
         const cols = (stdout.split('\n')[1] || '').trim().split(/\s+/);
+        const usedKb = Number(cols[2]) || 0;
+        const availKb = Number(cols[3]) || 0;
         const pct = parseFloat(cols[4]);
-        resolve(Number.isFinite(pct) ? pct : 0);
+        const usable = usedKb + availKb;
+        resolve({
+          percent: Number.isFinite(pct) ? pct : (usable ? (usedKb / usable) * 100 : 0),
+          totalGb: +(usable / (1024 * 1024)).toFixed(1),
+          usedGb: +(usedKb / (1024 * 1024)).toFixed(1)
+        });
       });
     }
   });
@@ -110,10 +138,16 @@ function networkRates() {
 
 async function collect() {
   const net = networkRates();
+  const ram = ramStats();
+  const disk = await diskStats();
   return {
     cpuPercent: Number(cpuPercent().toFixed(2)),
-    ramPercent: Number(ramPercent().toFixed(2)),
-    diskPercent: Number((await diskPercent()).toFixed(2)),
+    ramPercent: Number(ram.percent.toFixed(2)),
+    diskPercent: Number(disk.percent.toFixed(2)),
+    ramTotalMb: ram.totalMb,
+    ramUsedMb: ram.usedMb,
+    diskTotalGb: disk.totalGb,
+    diskUsedGb: disk.usedGb,
     networkRxBytes: net.rxPerSec,
     networkTxBytes: net.txPerSec,
     uptimeSeconds: Math.round(os.uptime()),
