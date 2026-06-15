@@ -144,6 +144,13 @@ function schedule() {
   timers.push(setInterval(() => sendMetrics().catch(() => {}), metricMs));
   timers.push(setInterval(() => sendLogs().catch(() => {}), flushMs));
   timers.push(setInterval(() => sendHeartbeat().catch(() => {}), config.heartbeatIntervalMs));
+
+  // Send ONE sample right away so the dashboard always has fresh CPU/RAM/disk
+  // data immediately after a (re)start or a mode switch. Without this, the first
+  // background metric wouldn't arrive for a full hour (idle interval) and the
+  // `metrics` collection would sit empty until then. Routing still respects
+  // realtimeMode: a live sample -> MetricLive (2-min TTL), background -> Metric (7-day).
+  sendMetrics().catch(() => {});
 }
 
 // ---------- lifecycle ----------

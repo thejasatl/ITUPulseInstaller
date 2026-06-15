@@ -92,13 +92,26 @@ if [ -s "$TMP/itupulse-agent.service" ] && [ -d /run/systemd/system ]; then
   systemctl enable --now itupulse-updater.timer >/dev/null 2>&1 || true
 fi
 
-# 5. Restart whichever runner is in use.
-if systemctl list-unit-files 2>/dev/null | grep -q '^itupulse-agent\.service'; then
-  systemctl restart itupulse-agent
-  sleep 2
-  systemctl --no-pager --lines=5 status itupulse-agent || true
+# 5. Restart the agent so the NEW code actually runs. This is the step that used
+#    to need a manual `systemctl restart`. We launch it DETACHED (a transient
+#    systemd timer, or setsid fallback) so the restart can never be killed when
+#    the agent stops and there is no self-restart deadlock — works the same
+#    whether this script is run by the root updater, by hand, or by the agent.
+restart_agent_detached() {
+  if command -v systemd-run >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
+    systemd-run --quiet --collect --on-active=2 \
+      systemctl restart itupulse-agent >/dev/null 2>&1 && return 0
+  fi
+  setsid bash -c 'sleep 2; systemctl restart itupulse-agent' </dev/null >/dev/null 2>&1 &
+  return 0
+}
+
+if [ -d /run/systemd/system ] && { systemctl list-unit-files 2>/dev/null | grep -q '^itupulse-agent\.service' || [ -f "$SERVICE" ]; }; then
+  say "restarting itupulse-agent to load v${VER:-new} (detached, ~2s) …"
+  restart_agent_detached
+  say "restart scheduled — the new version goes live in ~2s (no manual restart needed)."
 elif command -v pm2 >/dev/null 2>&1 && pm2 describe itupulse-agent >/dev/null 2>&1; then
-  pm2 restart itupulse-agent
+  pm2 restart itupulse-agent || true
 else
   say "no running itupulse-agent service detected — start it manually."
 fi
