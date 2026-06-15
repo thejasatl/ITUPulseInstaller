@@ -22,7 +22,7 @@ REPO_RAW="${ITUPULSE_REPO_RAW:-https://raw.githubusercontent.com/$GH_OWNER/$GH_R
 
 APP_DIR=/opt/itupulse-agent
 SERVICE=/etc/systemd/system/itupulse-agent.service
-AGENT_FILES=(src/agent.js src/config.js src/credentials.js src/logger.js src/transportHttp.js src/bufferStore.js src/nginxParser.js src/nginxLogReader.js src/metricsCollector.js src/register.js package.json)
+AGENT_FILES=(src/agent.js src/config.js src/credentials.js src/logger.js src/transportHttp.js src/bufferStore.js src/nginxParser.js src/nginxLogReader.js src/metricsCollector.js src/register.js src/updater.js package.json)
 
 say()  { echo -e "\033[1;36m[itupulse]\033[0m $*"; }
 fail() { echo -e "\033[1;31m[itupulse] ERROR:\033[0m $*" >&2; exit 1; }
@@ -56,6 +56,8 @@ for f in "${AGENT_FILES[@]}"; do
 done
 gh_fetch "uninstall.sh" "$TMP/uninstall.sh" || say "WARNING: uninstall.sh not refreshed"
 gh_fetch "systemd/itupulse-agent.service" "$TMP/itupulse-agent.service" || say "WARNING: systemd unit not refreshed"
+gh_fetch "systemd/itupulse-updater.service" "$TMP/itupulse-updater.service" || true
+gh_fetch "systemd/itupulse-updater.timer" "$TMP/itupulse-updater.timer" || true
 
 # 2. Sanity-check the freshly downloaded JS before touching the live install.
 for f in "${AGENT_FILES[@]}"; do
@@ -77,7 +79,10 @@ VER="$(node -e "try{process.stdout.write(String(require('$APP_DIR/package.json')
 # 4. Refresh the systemd unit (has hardening/path fixes) if present.
 if [ -s "$TMP/itupulse-agent.service" ] && [ -d /run/systemd/system ]; then
   cp -f "$TMP/itupulse-agent.service" "$SERVICE"
+  [ -s "$TMP/itupulse-updater.service" ] && cp -f "$TMP/itupulse-updater.service" /etc/systemd/system/itupulse-updater.service || true
+  [ -s "$TMP/itupulse-updater.timer" ] && cp -f "$TMP/itupulse-updater.timer" /etc/systemd/system/itupulse-updater.timer || true
   systemctl daemon-reload
+  systemctl enable --now itupulse-updater.timer >/dev/null 2>&1 || true
 fi
 
 # 5. Restart whichever runner is in use.

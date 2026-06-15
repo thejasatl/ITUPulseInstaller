@@ -30,7 +30,7 @@ ETC_DIR=/etc/itupulse
 STATE_DIR=/var/lib/itupulse-agent
 LOG_DIR=/var/log/itupulse-agent
 SERVICE=/etc/systemd/system/itupulse-agent.service
-AGENT_FILES=(src/agent.js src/config.js src/credentials.js src/logger.js src/transportHttp.js src/bufferStore.js src/nginxParser.js src/nginxLogReader.js src/metricsCollector.js src/register.js package.json)
+AGENT_FILES=(src/agent.js src/config.js src/credentials.js src/logger.js src/transportHttp.js src/bufferStore.js src/nginxParser.js src/nginxLogReader.js src/metricsCollector.js src/register.js src/updater.js package.json)
 
 say()  { echo -e "\033[1;36m[itupulse]\033[0m $*"; }
 fail() { echo -e "\033[1;31m[itupulse] ERROR:\033[0m $*" >&2; exit 1; }
@@ -143,7 +143,13 @@ say "wrote $ETC_DIR/agent.env (640 root:itupulse)"
 
 # ---- 8. systemd unit ----
 gh_fetch "systemd/itupulse-agent.service" "$SERVICE" || fail "download failed: systemd unit"
+# Root updater (applies dashboard-queued updates). Separate from the agent so the
+# agent stays non-root; the updater runs on a 30s timer.
+gh_fetch "systemd/itupulse-updater.service" /etc/systemd/system/itupulse-updater.service || say "WARNING: updater service not installed"
+gh_fetch "systemd/itupulse-updater.timer" /etc/systemd/system/itupulse-updater.timer || say "WARNING: updater timer not installed"
 systemctl daemon-reload
+systemctl enable --now itupulse-updater.timer >/dev/null 2>&1 || say "WARNING: could not enable updater timer"
+
 
 # ---- 9. Registration test (runs as itupulse, exactly like the service will) ----
 say "testing registration…"

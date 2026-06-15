@@ -1,0 +1,16 @@
+[Unit]
+Description=ITUPulse Agent Updater (applies queued updates from the dashboard)
+Documentation=https://github.com/thejasatl/ITUPulseInstaller
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Runs as root (default) so it can run update.sh — replace files + restart the agent.
+EnvironmentFile=/etc/itupulse/agent.env
+ExecStart=/usr/bin/env node /opt/itupulse-agent/src/updater.js
+TimeoutStartSec=240
+# Light hardening (root is required to run update.sh, so keep this minimal).
+NoNewPrivileges=false
+ProtectKernelTunables=true
+ProtectControlGroups=true

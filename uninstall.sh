@@ -15,6 +15,10 @@ fi
 systemctl stop itupulse-agent 2>/dev/null || true
 systemctl disable itupulse-agent 2>/dev/null || true
 rm -f /etc/systemd/system/itupulse-agent.service
+# root updater service + timer
+systemctl stop itupulse-updater.timer 2>/dev/null || true
+systemctl disable itupulse-updater.timer 2>/dev/null || true
+rm -f /etc/systemd/system/itupulse-updater.service /etc/systemd/system/itupulse-updater.timer
 systemctl daemon-reload 2>/dev/null || true
 
 # --- pm2 install (if the agent was run under pm2 instead) ---

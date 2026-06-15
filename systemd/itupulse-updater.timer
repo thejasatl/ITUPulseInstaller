@@ -1,0 +1,11 @@
+[Unit]
+Description=Poll for ITUPulse agent update commands
+
+[Timer]
+OnBootSec=60
+OnUnitActiveSec=30
+AccuracySec=5
+Unit=itupulse-updater.service
+
+[Install]
+WantedBy=timers.target
