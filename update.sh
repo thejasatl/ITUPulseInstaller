@@ -32,7 +32,7 @@ fail() { echo -e "\033[1;31m[itupulse] ERROR:\033[0m $*" >&2; exit 1; }
 command -v node >/dev/null 2>&1 || fail "node not found"
 
 # Pull config (GH token, optional post-update vars) so manual + updater runs match.
-if [ -f /etc/itupulse/agent.env ]; then set -a; . /etc/itupulse/agent.env; set +a; fi
+if [ -f /etc/itupulse/agent.env ]; then set -a; . /etc/itupulse/agent.env 2>/dev/null || true; set +a; fi
 GH_TOKEN="${ITUPULSE_GH_TOKEN:-$GH_TOKEN}"
 
 gh_fetch() {
