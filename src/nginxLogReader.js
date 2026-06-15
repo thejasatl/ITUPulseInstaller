@@ -1,11 +1,18 @@
 'use strict';
 
 /**
- * Safe NGINX access.log tail.
- * - Read-only (open flag 'r'); never writes, locks, or rotates the log itself
- * - Persists byte offset in <stateDir>/state.json across restarts
- * - Handles logrotate: file truncation (size < offset) and inode change
- * - Backpressure: reads in 64 KB chunks, max one read loop at a time
+ * Safe access-log tail. Supports EITHER:
+ *   - a single file:  ITUPULSE_ACCESS_LOG=/path/app/access.log
+ *   - a whole folder: ITUPULSE_ACCESS_LOG=/path/app/logs   (tails every *.log in it)
+ *
+ * For folders it tails every `*.log` file and picks up new files as they appear.
+ * Lines that aren't valid access entries (e.g. plain stdout/stderr) are ignored
+ * by the parser, so mixing request logs with other logs is harmless.
+ *
+ * - Read-only; never writes/locks/rotates the logs
+ * - Per-file byte offset persisted in <stateDir>/state.json across restarts
+ * - Handles logrotate (truncation + inode change) per file
+ * - Starts at end-of-file (monitors from "now", not history)
  */
 const fs = require('fs');
 const path = require('path');
@@ -19,11 +26,9 @@ const POLL_MS = 1000;
 
 class NginxLogReader {
   constructor(onEntries) {
-    this.file = config.nginxAccessLog;
+    this.target = config.nginxAccessLog;     // file OR directory
     this.onEntries = onEntries;
-    this.offset = 0;
-    this.inode = null;
-    this.partial = '';
+    this.files = new Map();                   // path -> { offset, inode, partial }
     this.reading = false;
     this.timer = null;
   }
@@ -31,9 +36,10 @@ class NginxLogReader {
   loadState() {
     try {
       const s = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
-      if (s.file === this.file) {
-        this.offset = s.offset || 0;
-        this.inode = s.inode || null;
+      if (s.target === this.target && s.files) {
+        for (const [f, v] of Object.entries(s.files)) {
+          this.files.set(f, { offset: v.offset || 0, inode: v.inode || null, partial: '' });
+        }
       }
     } catch {
       /* fresh start */
@@ -43,31 +49,57 @@ class NginxLogReader {
   saveState() {
     try {
       fs.mkdirSync(config.stateDir, { recursive: true, mode: 0o750 });
-      fs.writeFileSync(STATE_FILE, JSON.stringify({ file: this.file, offset: this.offset, inode: this.inode }));
+      const files = {};
+      for (const [f, v] of this.files) files[f] = { offset: v.offset, inode: v.inode };
+      fs.writeFileSync(STATE_FILE, JSON.stringify({ target: this.target, files }));
     } catch (err) {
       logger.error('state save failed', { err: err.message });
     }
   }
 
-  start() {
-    this.loadState();
+  /** Resolve the current list of log files (expands a directory to its *.log files). */
+  discover() {
     let st;
     try {
-      st = fs.statSync(this.file);
+      st = fs.statSync(this.target);
     } catch {
-      logger.warn('nginx access log not found yet — will keep polling', { file: this.file });
+      return []; // not present yet — keep polling
     }
-    if (st) {
-      if (this.inode === null) {
-        // First run: start at end of file. We monitor from now, not history.
-        this.offset = st.size;
-        this.inode = st.ino;
-        this.saveState();
+    if (st.isDirectory()) {
+      try {
+        return fs.readdirSync(this.target)
+          .filter((n) => n.endsWith('.log'))
+          .map((n) => path.join(this.target, n));
+      } catch {
+        return [];
       }
     }
+    return [this.target];
+  }
+
+  start() {
+    this.loadState();
+    for (const f of this.discover()) this.ensureTracked(f, true);
+    this.saveState();
     this.timer = setInterval(() => this.poll(), POLL_MS);
     this.timer.unref();
-    logger.info('nginx log reader started', { file: this.file, offset: this.offset });
+    const mode = (() => { try { return fs.statSync(this.target).isDirectory() ? 'directory' : 'file'; } catch { return 'pending'; } })();
+    logger.info('access log reader started', { target: this.target, mode, tracking: this.files.size });
+  }
+
+  /** Begin tracking a file. New files start at end (don't ingest old history). */
+  ensureTracked(file, atEnd) {
+    if (this.files.has(file)) return;
+    let size = 0;
+    let ino = null;
+    try {
+      const st = fs.statSync(file);
+      size = st.size;
+      ino = st.ino;
+    } catch {
+      /* file vanished between discover and stat */
+    }
+    this.files.set(file, { offset: atEnd ? size : 0, inode: ino, partial: '' });
   }
 
   stop() {
@@ -77,60 +109,59 @@ class NginxLogReader {
 
   poll() {
     if (this.reading) return;
-    let st;
-    try {
-      st = fs.statSync(this.file);
-    } catch {
-      return; // log file missing (rotation gap) — retry next poll
-    }
-
-    // Rotation detection
-    if (this.inode !== null && st.ino !== this.inode) {
-      logger.info('log rotation detected (inode changed) — restarting from new file');
-      this.inode = st.ino;
-      this.offset = 0;
-      this.partial = '';
-    } else if (st.size < this.offset) {
-      logger.info('log truncation detected — resetting offset');
-      this.offset = 0;
-      this.partial = '';
-    }
-    if (st.size === this.offset) return;
+    // pick up newly-created log files in a watched directory
+    for (const f of this.discover()) this.ensureTracked(f, true);
 
     this.reading = true;
-    this.readNew(st.size)
+    this.readAll()
       .catch((err) => logger.error('log read failed', { err: err.message }))
-      .finally(() => {
-        this.reading = false;
-      });
+      .finally(() => { this.reading = false; });
   }
 
-  async readNew(fileSize) {
-    const fd = await fs.promises.open(this.file, 'r');
-    try {
-      while (this.offset < fileSize) {
-        const toRead = Math.min(CHUNK, fileSize - this.offset);
-        const buf = Buffer.alloc(toRead);
-        const { bytesRead } = await fd.read(buf, 0, toRead, this.offset);
-        if (bytesRead === 0) break;
-        this.offset += bytesRead;
-
-        const text = this.partial + buf.toString('utf8', 0, bytesRead);
-        const lines = text.split('\n');
-        this.partial = lines.pop(); // last element is incomplete (or '')
-
-        const entries = [];
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          const entry = parseLine(line);
-          if (entry) entries.push(entry);
-        }
-        if (entries.length) this.onEntries(entries);
+  async readAll() {
+    let touched = false;
+    for (const [file, state] of this.files) {
+      let st;
+      try {
+        st = fs.statSync(file);
+      } catch {
+        continue; // missing (rotation gap) — retry next poll
       }
-      this.saveState();
-    } finally {
-      await fd.close();
+      // rotation / truncation handling
+      if (state.inode !== null && st.ino !== state.inode) {
+        state.inode = st.ino; state.offset = 0; state.partial = '';
+      } else if (st.size < state.offset) {
+        state.offset = 0; state.partial = '';
+      }
+      if (st.size === state.offset) continue;
+
+      const fd = await fs.promises.open(file, 'r');
+      try {
+        while (state.offset < st.size) {
+          const toRead = Math.min(CHUNK, st.size - state.offset);
+          const buf = Buffer.alloc(toRead);
+          const { bytesRead } = await fd.read(buf, 0, toRead, state.offset);
+          if (bytesRead === 0) break;
+          state.offset += bytesRead;
+
+          const text = state.partial + buf.toString('utf8', 0, bytesRead);
+          const lines = text.split('\n');
+          state.partial = lines.pop();
+
+          const entries = [];
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            const entry = parseLine(line);
+            if (entry) entries.push(entry);
+          }
+          if (entries.length) this.onEntries(entries);
+        }
+        touched = true;
+      } finally {
+        await fd.close();
+      }
     }
+    if (touched) this.saveState();
   }
 }
 
