@@ -61,6 +61,36 @@ async function sendLogs() {
   }
 }
 
+// On-demand: read the last N lines straight from the access.log FILE and ship
+// them immediately (used by the dashboard "read from file" / History view).
+// Independent of realtime mode — this is an explicit request, not background.
+async function sendTailFromFile(lines) {
+  if (!logReader) return;
+  const n = Math.min(Math.max(Number(lines) || 50, 1), 500);
+  let entries = [];
+  try {
+    entries = await logReader.backfill(n);
+  } catch (err) {
+    logger.warn('access.log tail read failed', { err: err.message });
+    return;
+  }
+  if (!entries.length) {
+    logger.info('access.log tail requested but file had no readable lines', { requested: n });
+    return;
+  }
+  // Send in chunks so request sizes stay sane; bypasses the realtime gate.
+  for (let i = 0; i < entries.length; i += config.logBatchSize) {
+    const batch = entries.slice(i, i + config.logBatchSize);
+    try {
+      await post('/api/v1/agent/logs', { logs: batch });
+    } catch (err) {
+      if (isAuthFailure(err)) return handleRevoked();
+      buffer.push('logs', batch);
+    }
+  }
+  logger.info('shipped access.log tail from file', { requested: n, sent: entries.length });
+}
+
 async function sendMetrics(forceLive = false) {
   let snapshot;
   try {
@@ -97,6 +127,9 @@ async function sendHeartbeat() {
     });
     if (resp.data && resp.data.sampleNow) {
       sendMetrics(true).catch(() => {}); // on-demand sample requested from the dashboard
+    }
+    if (resp.data && resp.data.tailLogs > 0) {
+      sendTailFromFile(resp.data.tailLogs).catch(() => {}); // dashboard asked to read access.log from file
     }
     const wantRealtime = Boolean(resp.data && resp.data.streamingRequested);
     if (wantRealtime !== realtimeMode) {
