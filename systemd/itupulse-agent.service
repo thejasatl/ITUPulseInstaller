@@ -14,7 +14,7 @@ ExecStart=/usr/bin/env node /opt/itupulse-agent/src/agent.js
 Restart=always
 RestartSec=5
 
-# ---- Hardening (spec section 15) ----
+# ---- Hardening ----
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full
@@ -24,10 +24,13 @@ ProtectKernelModules=true
 ProtectControlGroups=true
 RestrictSUIDSGID=true
 LockPersonality=true
-MemoryDenyWriteExecute=true
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 ReadWritePaths=/var/lib/itupulse-agent /var/log/itupulse-agent
-ReadOnlyPaths=/var/log/nginx
+# Leading "-" => tolerate the path being absent (e.g. nginx not installed yet),
+# otherwise systemd fails sandbox setup with status=226/NAMESPACE.
+ReadOnlyPaths=-/var/log/nginx
+# NOTE: MemoryDenyWriteExecute is intentionally NOT set — Node's V8 JIT needs
+# writable+executable memory and crashes under it.
 
 # Resource limits — the agent must never starve the host
 MemoryMax=200M
