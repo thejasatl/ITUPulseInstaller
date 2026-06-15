@@ -26,6 +26,16 @@ function loadEnvFile() {
 
 loadEnvFile();
 
+// Test-only escape hatch: accept a self-signed / untrusted API TLS cert.
+// This DISABLES certificate verification — only for testing against a box that
+// doesn't yet have a real CA cert. Production must use a valid full-chain cert.
+if (String(process.env.ITUPULSE_INSECURE_TLS || '').toLowerCase() === 'true') {
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+  process.stderr.write(
+    'WARNING: ITUPULSE_INSECURE_TLS=true — TLS certificate verification is DISABLED. Use only for testing.\n'
+  );
+}
+
 function required(name) {
   const v = process.env[name];
   if (!v) {
