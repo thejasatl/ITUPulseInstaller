@@ -99,7 +99,14 @@ echo "1.0.0" > "$APP_DIR/VERSION"
 chown -R root:itupulse "$APP_DIR"
 chmod -R 750 "$APP_DIR"
 
-# ---- 6. Gather configuration ----
+# ---- 6. Install Node dependencies (production only) ----
+if [ -f "$APP_DIR/package.json" ]; then
+  say "installing dependencies…"
+  ( cd "$APP_DIR" && npm install --omit=dev --no-audit --no-fund >/dev/null 2>&1 ) \
+    || say "WARNING: npm install reported issues — check $APP_DIR"
+fi
+
+# ---- 7. Gather configuration ----
 if [ -t 0 ]; then
   read -rp "ITUPulse API URL [https://itupulseagentapi.indotruck-utama.co.id:4000]: " API_URL
   read -rp "Install key (from dashboard): " INSTALL_KEY
@@ -121,7 +128,7 @@ ENVIRONMENT="${ENVIRONMENT:-production}"
 NGINX_LOG="/var/log/nginx/access.log"
 [ -f "$NGINX_LOG" ] || say "WARNING: $NGINX_LOG not found — agent will poll until it appears"
 
-# ---- 7. Write env file (restricted permissions per spec) ----
+# ---- 8. Write env file (restricted permissions per spec) ----
 cat > "$ETC_DIR/agent.env" <<ENVEOF
 ITUPULSE_API_URL=$API_URL
 ITUPULSE_INSTALL_KEY=$INSTALL_KEY
@@ -136,11 +143,11 @@ chown root:itupulse "$ETC_DIR/agent.env"
 chmod 640 "$ETC_DIR/agent.env"
 say "wrote $ETC_DIR/agent.env (640 root:itupulse)"
 
-# ---- 8. systemd unit ----
+# ---- 9. systemd unit ----
 gh_fetch "systemd/itupulse-agent.service" "$SERVICE" || fail "download failed: systemd unit"
 systemctl daemon-reload
 
-# ---- 9. Registration test (runs as itupulse, exactly like the service will) ----
+# ---- 10. Registration test (runs as itupulse, exactly like the service will) ----
 say "testing registration…"
 if sudo -u itupulse ITUPULSE_ENV_FILE="$ETC_DIR/agent.env" node -e "
   require('$APP_DIR/src/register.js').register().then(ok => process.exit(ok ? 0 : 1));
@@ -150,7 +157,7 @@ else
   fail "registration failed — check install key, API URL, and network. Nothing was started."
 fi
 
-# ---- 10. Enable + start ----
+# ---- 11. Enable + start ----
 systemctl enable itupulse-agent >/dev/null
 systemctl restart itupulse-agent
 sleep 2
