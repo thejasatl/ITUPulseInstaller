@@ -31,6 +31,10 @@ fail() { echo -e "\033[1;31m[itupulse] ERROR:\033[0m $*" >&2; exit 1; }
 [ -d "$APP_DIR" ] || fail "$APP_DIR not found — the agent isn't installed. Run install.sh first."
 command -v node >/dev/null 2>&1 || fail "node not found"
 
+# Pull config (GH token, optional post-update vars) so manual + updater runs match.
+if [ -f /etc/itupulse/agent.env ]; then set -a; . /etc/itupulse/agent.env; set +a; fi
+GH_TOKEN="${ITUPULSE_GH_TOKEN:-$GH_TOKEN}"
+
 gh_fetch() {
   local path="$1" out="$2"
   if [ -n "$GH_TOKEN" ]; then
@@ -46,6 +50,8 @@ gh_fetch() {
 }
 
 say "updating agent from $GH_OWNER/$GH_REPO@$GH_REF …"
+
+OLD_VER="$(node -e "try{process.stdout.write(String(require('$APP_DIR/package.json').version||''))}catch(e){}" 2>/dev/null || true)"
 
 # 1. Download everything to a temp dir FIRST — only swap in if all good.
 TMP="$(mktemp -d)"
@@ -75,6 +81,7 @@ chmod -R 750 "$APP_DIR"
 
 VER="$(node -e "try{process.stdout.write(String(require('$APP_DIR/package.json').version||''))}catch(e){}" 2>/dev/null || true)"
 [ -n "$VER" ] && echo "$VER" > "$APP_DIR/VERSION"
+say "agent version: ${OLD_VER:-?} -> ${VER:-?}"
 
 # 4. Refresh the systemd unit (has hardening/path fixes) if present.
 if [ -s "$TMP/itupulse-agent.service" ] && [ -d /run/systemd/system ]; then
@@ -94,6 +101,16 @@ elif command -v pm2 >/dev/null 2>&1 && pm2 describe itupulse-agent >/dev/null 2>
   pm2 restart itupulse-agent
 else
   say "no running itupulse-agent service detected — start it manually."
+fi
+
+# 6. Optional: reload the app's web server (e.g. to re-open rotated logs) + custom hook.
+if [ "${ITUPULSE_RELOAD_NGINX:-false}" = "true" ] && command -v nginx >/dev/null 2>&1; then
+  systemctl reload nginx 2>/dev/null || systemctl restart nginx 2>/dev/null || true
+  say "reloaded nginx"
+fi
+if [ -n "${ITUPULSE_POST_UPDATE:-}" ]; then
+  say "running post-update hook: ${ITUPULSE_POST_UPDATE}"
+  bash -lc "${ITUPULSE_POST_UPDATE}" || say "post-update hook failed (continuing)"
 fi
 
 say ""

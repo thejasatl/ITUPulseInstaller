@@ -134,7 +134,14 @@ class NginxLogReader {
 
   poll() {
     if (this.reading) return;
-    for (const f of this.discover()) this.ensureTracked(f, true);
+    const found = this.discover();
+    for (const f of found) this.ensureTracked(f, true);
+    // Prune entries for files that no longer exist (logrotate) so the map +
+    // state.json stay tiny over long uptimes.
+    if (found.length) {
+      const live = new Set(found);
+      for (const f of [...this.files.keys()]) if (!live.has(f)) this.files.delete(f);
+    }
     this.reading = true;
     this.readAll()
       .catch((err) => logger.error('log read failed', { err: err.message }))
