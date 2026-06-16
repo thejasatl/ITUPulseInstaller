@@ -66,7 +66,7 @@ const config = {
   // agent.env can never spam the database.
   backgroundMetricIntervalMs: Math.max(60000, Number(process.env.ITUPULSE_BACKGROUND_METRIC_MS) || 3600000),
   // realtime (a viewer is watching) stays fast:
-  realtimeMetricIntervalMs: Math.max(15000, Number(process.env.ITUPULSE_REALTIME_METRIC_MS) || 60000), // 1 min while watched (floor 15s)
+  realtimeMetricIntervalMs: Math.max(10000, Number(process.env.ITUPULSE_REALTIME_METRIC_MS) || 15000), // 15s while watched (floor 10s)
   heartbeatIntervalMs: 30000,
   logFlushIntervalMs: 10000,
   realtimeLogFlushIntervalMs: 2000,
