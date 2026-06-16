@@ -32,7 +32,9 @@ let stopping = false;
 // ---------- senders ----------
 
 async function sendLogs() {
-  if (!realtimeMode) return; // logs only flow to the DB while a viewer is watching
+  // Flush new access.log lines to the persistent record (apilogs). Runs always:
+  // every 10s when idle, every 2s when watched. The reader advances the file
+  // offset so each line is shipped exactly once — no duplicates in the DB.
   // Drain buffered backlog first, then in-memory batch.
   try {
     const backlog = buffer.drain('logs', config.logBatchSize);
@@ -92,17 +94,17 @@ async function sendTailFromFile(lines) {
     logger.info('access.log tail requested but file had no readable lines', { requested: n });
     return;
   }
-  // Send in chunks so request sizes stay sane; bypasses the realtime gate.
+  // File reads feed ONLY the in-memory buffer (History tab) via /agent/log-tail —
+  // never apilogs — so the persistent record stays clean + de-duplicated.
   for (let i = 0; i < entries.length; i += config.logBatchSize) {
     const batch = entries.slice(i, i + config.logBatchSize);
     try {
-      await post('/api/v1/agent/logs', { logs: batch });
+      await post('/api/v1/agent/log-tail', { logs: batch });
     } catch (err) {
       if (isAuthFailure(err)) return handleRevoked();
-      buffer.push('logs', batch);
     }
   }
-  logger.info('shipped access.log tail from file', { requested: n, sent: entries.length });
+  logger.info('shipped access.log tail from file (History, in-memory)', { requested: n, sent: entries.length });
 }
 
 async function sendMetrics(live = false) {
@@ -150,14 +152,8 @@ async function sendHeartbeat() {
     if (wantRealtime !== realtimeMode) {
       realtimeMode = wantRealtime;
       logger.info(`switching to ${realtimeMode ? 'REALTIME' : 'background'} mode`);
-      schedule(); // re-arm timers with new intervals
-      // When a viewer opens this server, backfill recent history from the file
-      // so the dashboard's History/stream shows it — without background storage.
-      if (realtimeMode && logReader) {
-        logReader.backfill(200)
-          .then((entries) => { if (entries.length) { pendingLogs.push(...entries); return sendLogs(); } })
-          .catch(() => {});
-      }
+      schedule(); // re-arm timers with new intervals (no backfill — the offset
+      // stream already ships new lines, and History reads the file on demand)
     }
   } catch (err) {
     if (isAuthFailure(err)) return handleRevoked();
@@ -250,11 +246,9 @@ async function main() {
   }
 
   logReader = new NginxLogReader((entries) => {
-    // Only stream logs to the backend while a dashboard viewer is watching this
-    // server (realtime mode). In background we discard them — no DB spam. The
-    // reader keeps advancing the file offset, so when a viewer connects we stream
-    // from "now", not the whole backlog. Raw history lives in the access.log file.
-    if (!realtimeMode) return;
+    // Accumulate every NEW line (the reader advances the file offset, so each line
+    // appears once). sendLogs() ships them to apilogs on the flush interval —
+    // 10s idle / 2s watched. No duplicates, no re-reading old lines.
     pendingLogs.push(...entries);
     if (pendingLogs.length > config.logBatchSize * 5) {
       buffer.push('logs', pendingLogs.splice(0, pendingLogs.length - config.logBatchSize));
