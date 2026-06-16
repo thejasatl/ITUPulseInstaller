@@ -7,7 +7,7 @@
  * manually (e.g. registration test during install).
  */
 const fs = require('fs');
-let pkgVersion = '1.0.6';
+let pkgVersion = '1.0.7';
 try { pkgVersion = require('../package.json').version || pkgVersion; } catch { /* keep default */ }
 
 const ENV_FILE = process.env.ITUPULSE_ENV_FILE || '/etc/itupulse/agent.env';

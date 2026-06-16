@@ -28,16 +28,21 @@ function cpuSnapshot() {
   return { idle, total };
 }
 
-function cpuPercent() {
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Accurate system CPU% over a fixed 250ms window. Measuring its OWN window
+ * (instead of the delta between collect() calls) makes it correct regardless
+ * of how often/closely collect() runs — the old cross-call delta could read a
+ * tiny window where idle barely ticked and report a fake ~100%.
+ */
+async function cpuPercent() {
   try {
-    const cur = cpuSnapshot();
-    if (!prevCpu) {
-      prevCpu = cur;
-      return 0;
-    }
-    const dTotal = cur.total - prevCpu.total;
-    const dIdle = cur.idle - prevCpu.idle;
-    prevCpu = cur;
+    const a = cpuSnapshot();
+    await sleep(250);
+    const b = cpuSnapshot();
+    const dTotal = b.total - a.total;
+    const dIdle = b.idle - a.idle;
     if (dTotal <= 0) return 0;
     return Math.min(100, Math.max(0, ((dTotal - dIdle) / dTotal) * 100));
   } catch {
@@ -140,8 +145,9 @@ async function collect() {
   const net = networkRates();
   const ram = ramStats();
   const disk = await diskStats();
+  const cpu = await cpuPercent();
   return {
-    cpuPercent: Number(cpuPercent().toFixed(2)),
+    cpuPercent: Number(cpu.toFixed(2)),
     ramPercent: Number(ram.percent.toFixed(2)),
     diskPercent: Number(disk.percent.toFixed(2)),
     ramTotalMb: ram.totalMb,
